@@ -1,9 +1,8 @@
-# mdp_amo_priority_dynamic_every5.py
 # Finite-horizon MDP with AMO (NONE/A_ONLY/B_ONLY) and "B priority".
 # Actions at (IB, bA): q ∈ {0,1,...,min(IB,bA)} (including wait).
-# Value function indexing (clean & standard):
+# Value function indexing :
 #   V[r] = optimal expected total cost with r periods remaining (terminal V[0] = 0).
-#   We compute FORWARD: r = 1..N using V[r-1].
+#   We compute FORWARD: r = 1..N using V[r-1]. (backwards)
 # User-facing “t=0 (start)” maps to internal r=N (see get_optimal_expected_cost_user_t).
 
 from dataclasses import dataclass
@@ -40,7 +39,7 @@ PAY_FIXED_ON_REALIZED: bool = True  # fixed cost charged when q_realized>0 (else
 CLAMP_TO_GRID: bool = True          # clamp next states into grid bounds
 
 # -------------------------
-# Demand probabilities (AMO)
+# Demand probabilities
 # -------------------------
 def computeDemandProbability_AMO(inst: Instance) -> Tuple[float, float, float]:
     # At most one event in a small dt: NONE, A_ONLY, B_ONLY (renormalized if needed)
@@ -166,7 +165,7 @@ def solveDP_AMO_Bpriority_dynamic(inst: Instance):
     }
 
 # -------------------------
-# Pretty printers
+# Printers
 # -------------------------
 def print_optimal_policy(solution, inst: Instance, r: int,
                          IB_from: Optional[int] = None, IB_to: Optional[int] = None,
@@ -217,7 +216,7 @@ def print_policies_every5(solution, inst: Instance,
                                  IB_from=IB_from, IB_to=IB_to,
                                  bA_from=bA_from, bA_to=bA_to)
 
-# (Optional) scenario-table printer left out to keep output manageable; restore if you need it.
+# (Optional) scenario-table printer left out to keep output manageable; restore if need it.
 
 # -------------------------
 # Simulation (4-row table)
