@@ -390,10 +390,10 @@ if __name__ == "__main__":
     inst = Instance(
         N=20, T=2.0,               # dt = 0.1
         lambdaA=8, lambdaB=5,
-        h=0.1, pA=100.0, pB=5.0,
-        cf=7.0, cu=2.0,
-        minIB=-4, maxIB=8, maxbA=10,
-        IB0=6                     # initial inventory at B (user input)
+        h=0.1, pA=50.0, pB=10.0,
+        cf=20.0, cu=1.0,
+        minIB=-20, maxIB=20, maxbA=10,
+        IB0=20                     # initial inventory at B (user input)
     )
 
     # Solve DP (exact)
