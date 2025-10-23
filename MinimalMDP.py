@@ -417,6 +417,6 @@ if __name__ == "__main__":
 
     # === (3) Tally over simN simulations ===
     simN = 5000        # how many simulations to run
-    base_seed = 3000  # base seed; each run uses base_seed + r
+    base_seed = 3260  # base seed; each run uses base_seed + r
     mean, std, lo, hi, costs = run_simulations(inst, solution, simN, base_seed, IB0=inst.IB0, bA0=0)
     print(f"\n[Tally over {simN} sims] mean={mean:.4f}, std={std:.4f}, 95% CI=({lo:.4f}, {hi:.4f})")
