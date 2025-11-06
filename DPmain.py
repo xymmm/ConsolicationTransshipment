@@ -1,4 +1,4 @@
-# MinimalMDP.py (runner only)
+# DPmain.py (runner only)
 from minimalSolver import (
     Instance,
     solveDP_AMO_Bpriority_dynamic,
@@ -11,6 +11,10 @@ from minimalSolver import (
 from present_epoch import present_epoch
 from present_policy import present_policy
 from present_surface import present_surface
+
+# import verify_theory functions
+from minimalSolver import Instance, solveDP_AMO_Bpriority_dynamic
+from verify_theory import run_full_check
 
 if __name__ == "__main__":
     # knobs
@@ -53,3 +57,11 @@ if __name__ == "__main__":
     print(f"[Tally over {simN} sims] mean={mean:.4f}, std={std:.4f}, 95% CI=({lo:.4f}, {hi:.4f})")
     append_sim_results(SIMS_OUTFILE, RUN_LABEL, base_seed, costs)
 
+
+    run_full_check(
+        inst, solution,
+        fullclear_csv="fullclear_report.csv",
+        surf_csv="critical_surface.csv",
+        surf_png="critical_surface.png",
+        include_r0=False
+    )
