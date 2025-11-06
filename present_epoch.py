@@ -118,7 +118,7 @@ def write_epoch_csv_append(outfile, label,
         w.writerow(["label", str(label)])
         w.writerow(["time", *times])
         w.writerow(["IB_start", *IB_start])
-        w.writerow(["IA", *IA])
+        w.writerow(["ConsolidatedA", *IA])
         w.writerow(["dispatch_q", *dispatch_q])
         w.writerow(["event", *events])
         w.writerow(["A_demand", *A_demand_q])

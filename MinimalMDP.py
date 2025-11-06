@@ -8,9 +8,14 @@
 from dataclasses import dataclass
 from typing import Tuple, Optional
 import numpy as np
+import csv
+import os
 
-# === NEW: use the presentation helper (kept separate so solver stays clean)
+# === presentation helpers (separate modules) ===
 from present_epoch import present_epoch
+from present_policy import present_policy
+from present_surface import present_critical_surface_figure
+
 
 # -------------------------
 # Problem instance
@@ -111,7 +116,6 @@ def solveDP_AMO_Bpriority_dynamic(inst: Instance):
                     total_expected = 0.0
 
                     # Scenarios: 0=NONE, 1=A_ONLY, 2=B_ONLY
-                    # We'll compute next-state and immediate costs, then add Vprev[next]
                     # NONE
                     q_eff = q
                     IB_end = IB - q_eff
@@ -168,7 +172,7 @@ def solveDP_AMO_Bpriority_dynamic(inst: Instance):
     }
 
 # -------------------------
-# Policy printer (optional)
+# (Optional) Policy grid printer — kept for debugging; not used in __main__
 # -------------------------
 def print_optimal_policy(solution, inst: Instance, r: int,
                          IB_from: Optional[int] = None, IB_to: Optional[int] = None,
@@ -205,17 +209,8 @@ def print_optimal_policy(solution, inst: Instance, r: int,
             row.append(cell)
         print(" ".join(row))
 
-def print_policies_every5(solution, inst: Instance,
-                          IB_from: Optional[int] = None, IB_to: Optional[int] = None,
-                          bA_from: Optional[int] = None, bA_to: Optional[int] = None):
-    for r in range(inst.N, -1, -1):
-        if r % 5 == 0:
-            print_optimal_policy(solution, inst, r=r,
-                                 IB_from=IB_from, IB_to=IB_to,
-                                 bA_from=bA_from, bA_to=bA_to)
-
 # -------------------------
-# Cost helpers (exact and simulation tally)
+# Cost helpers (exact and simulation)
 # -------------------------
 def get_optimal_expected_cost_user_t(solution, inst: Instance, t_user: int, IB: int, bA: int) -> float:
     r = inst.N - t_user
@@ -281,6 +276,11 @@ def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: i
     return float(total_cost)
 
 def run_simulations(inst: Instance, solution, simN: int, base_seed: int, IB0: int, bA0: int):
+    """
+    Run simN independent paths with seeds base_seed + r.
+    Return (mean, std, ci_low, ci_high, all_costs).
+    CI uses normal approx (z=1.96).
+    """
     costs = []
     for r in range(simN):
         seed = base_seed + r
@@ -296,43 +296,83 @@ def run_simulations(inst: Instance, solution, simN: int, base_seed: int, IB0: in
     return mean, std, ci_low, ci_high, costs
 
 # -------------------------
-# Demo / quick run
+# NEW: persist simulation results (append-only)
+# -------------------------
+def append_sim_results(outfile: str, label: str, base_seed: int, costs: np.ndarray):
+    """
+    Append each simulation result (seed, cost) to a CSV, and also append one summary row.
+    Schema:
+        label, kind, run_idx, seed, cost, mean, std, ci_low, ci_high
+    - For per-run rows: fill label/kind/run_idx/seed/cost; leave summary cells empty.
+    - For one summary row at the end: kind='summary', set mean/std/ci_low/ci_high; leave per-run cells empty.
+    """
+    file_exists = os.path.exists(outfile)
+    with open(outfile, "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if not file_exists:
+            w.writerow(["label", "kind", "run_idx", "seed", "cost", "mean", "std", "ci_low", "ci_high"])
+        # per-run rows
+        for idx, c in enumerate(costs):
+            w.writerow([label, "run", idx, base_seed + idx, f"{float(c):.6f}", "", "", "", ""])
+        # summary row
+        if len(costs) > 0:
+            mean = float(costs.mean())
+            std = float(costs.std(ddof=1)) if len(costs) > 1 else 0.0
+            z = 1.96
+            half = z * std / (len(costs) ** 0.5) if len(costs) > 1 else 0.0
+            lo, hi = mean - half, mean + half
+            w.writerow([label, "summary", "", "", "", f"{mean:.6f}", f"{std:.6f}", f"{lo:.6f}", f"{hi:.6f}"])
+
+# -------------------------
+# Demo / quick run (no duplicate presentation)
 # -------------------------
 if __name__ == "__main__":
-    # === knobs for quick experiments ===
-    SHOW_POLICY_GRIDS = True
-    OUTFILE = "epoch.txt"
+    # === knobs ===
     RUN_LABEL = "Baseline"
+    EPOCH_OUTFILE = "epoch.csv"
+    POLICY_OUTFILE = "policy.csv"
+    SIMS_OUTFILE = "sims.csv"
     SEED = 2025
 
-    # Example instance (edit as needed)
+    # Example instance
     inst = Instance(
         N=20, T=2.0,               # dt = 0.1
         lambdaA=8, lambdaB=5,
         h=0.1, pA=50.0, pB=10.0,
         cf=20.0, cu=1.0,
         minIB=-20, maxIB=20, maxbA=10,
-        IB0=20                     # initial inventory at B (user input)
+        IB0=20
     )
 
     # Solve DP (exact)
     solution = solveDP_AMO_Bpriority_dynamic(inst)
 
-    # (Optional) Show a few policy grids
-    if SHOW_POLICY_GRIDS:
-        print_policies_every5(solution, inst)
-
-    # Report the optimal expected cost at user-facing t=0 (start), which maps to r=N
+    # Report the optimal expected cost at user-facing t=0 (start)
     opt_cost = get_optimal_expected_cost_user_t(solution, inst, t_user=0, IB=inst.IB0, bA=0)
-    print(f"\n[Exact] Optimal expected cost at t=0 from (IB0={inst.IB0}, bA0=0): {opt_cost:.4f}")
+    print(f"[Exact] Optimal expected cost at t=0 from (IB0={inst.IB0}, bA0=0): {opt_cost:.4f}")
 
-    # Present one epoch trajectory to CSV
-    present_epoch(inst, solution, IB0=inst.IB0, bA0=0, seed=2025,
-                  outfile="epoch.csv", label="Run A")
+    # === Single trajectory presentation (append-only CSV) ===
+    # present_epoch(inst, solution, IB0=inst.IB0, bA0=0, seed=SEED,outfile=EPOCH_OUTFILE, label=RUN_LABEL)
+
+    # Append N matrices (r = N..1), never overwrite, with blank line separators
+    # present_policy(inst, solution, outfile="policy.csv", include_r0=False)
 
 
-    # (Optional) batch simulations for a CI (kept, since not part of old 4-row table)
+    # === Multiple simulations (append every run cost + summary) ===
     simN = 2000
     base_seed = 3260
     mean, std, lo, hi, costs = run_simulations(inst, solution, simN, base_seed, IB0=inst.IB0, bA0=0)
-    print(f"\n[Tally over {simN} sims] mean={mean:.4f}, std={std:.4f}, 95% CI=({lo:.4f}, {hi:.4f})")
+    print(f"[Tally over {simN} sims] mean={mean:.4f}, std={std:.4f}, 95% CI=({lo:.4f}, {hi:.4f})")
+    append_sim_results(SIMS_OUTFILE, RUN_LABEL, base_seed, costs)
+
+    # after: solution = solveDP_AMO_Bpriority_dynamic(inst)
+    present_critical_surface_figure(
+        inst, solution,
+        outdir="figures",
+        label="Run A",
+        include_r0=False,  # surface for r = N..1
+        dpi=180
+    )
+
+
+    print("✅ Presentation complete.")
