@@ -37,4 +37,4 @@ def present_policy(inst, solution, outfile="policy.csv", include_r0=False):
 
             w.writerow([])  # blank line between epochs
 
-    print(f"✅ Appended {len(list(r_values))} matrices to {outfile} (rows=IA, cols=IB).")
+    print(f"Appended {len(list(r_values))} matrices to {outfile} (rows=IA, cols=IB).")

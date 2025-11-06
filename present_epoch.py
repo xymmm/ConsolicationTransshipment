@@ -139,4 +139,4 @@ def present_epoch(inst, solution, IB0, bA0=0, seed=2025, outfile="epoch.csv", la
         label = f"[IB0={IB0}, bA0={bA0}, seed={seed}]"
 
     write_epoch_csv_append(outfile, label, times, IB_start, IA, dq, ev, Ad, Bd, IB_end)
-    print(f"✅ Appended CSV results to {outfile}: {label}")
+    print(f"Appended CSV results to {outfile}: {label}")
