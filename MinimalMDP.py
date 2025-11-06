@@ -9,6 +9,9 @@ from dataclasses import dataclass
 from typing import Tuple, Optional
 import numpy as np
 
+# === NEW: use the presentation helper (kept separate so solver stays clean)
+from present_epoch import present_epoch
+
 # -------------------------
 # Problem instance
 # -------------------------
@@ -165,15 +168,11 @@ def solveDP_AMO_Bpriority_dynamic(inst: Instance):
     }
 
 # -------------------------
-# Printers
+# Policy printer (optional)
 # -------------------------
 def print_optimal_policy(solution, inst: Instance, r: int,
                          IB_from: Optional[int] = None, IB_to: Optional[int] = None,
                          bA_from: Optional[int] = None, bA_to: Optional[int] = None):
-    """
-    Print q* grid for a given stage r (r periods remaining). Auto-scales to bounds or sub-window.
-    Note: no decision when r=0, but we allow the call; cells will show 0 by construction.
-    """
     IB_vals = solution["IB_vals"]; bA_vals = solution["bA_vals"]; PI = solution["PI"]
     if r < 0 or r > inst.N:
         raise ValueError(f"r must be in [0..{inst.N}]")
@@ -209,86 +208,16 @@ def print_optimal_policy(solution, inst: Instance, r: int,
 def print_policies_every5(solution, inst: Instance,
                           IB_from: Optional[int] = None, IB_to: Optional[int] = None,
                           bA_from: Optional[int] = None, bA_to: Optional[int] = None):
-    """Print policy grids only at stages r that are multiples of 5: ..., 20,15,10,5,0."""
     for r in range(inst.N, -1, -1):
         if r % 5 == 0:
             print_optimal_policy(solution, inst, r=r,
                                  IB_from=IB_from, IB_to=IB_to,
                                  bA_from=bA_from, bA_to=bA_to)
 
-# (Optional) scenario-table printer left out to keep output manageable; restore if need it.
-
 # -------------------------
-# Simulation (4-row table)
-# -------------------------
-def simulate_trajectory(inst: Instance, solution, IB0: int, bA0: int, seed: int = 123):
-    """
-    Return the four lists: time, IA (backlog A before action), if_dispatch, IB (inventory B before action),
-    following the optimal policy PI[r] with r periods remaining.
-    """
-    rng = np.random.default_rng(seed)
-    dt = inst.dt()
-    IB_vals, bA_vals = solution["IB_vals"], solution["bA_vals"]
-    PI = solution["PI"]
-    pi0, piA, piB = solution["pi"]
-
-    times, IA, IF_DISPATCH, IBs = [], [], [], []
-    IB, bA = IB0, bA0
-
-    for k in range(inst.N):
-        r = inst.N - k  # periods remaining at this decision epoch
-        time_now = round(k * dt, 6)
-
-        times.append(time_now)
-        IA.append(bA)
-        IBs.append(IB)
-
-        if inst.minIB <= IB <= inst.maxIB and 0 <= bA <= inst.maxbA:
-            i = int(np.where(IB_vals == IB)[0][0])
-            j = int(np.where(bA_vals == bA)[0][0])
-            q = int(PI[r][i, j])  # policy for r periods remaining
-        else:
-            q = 0
-        IF_DISPATCH.append(1 if q > 0 else 0)
-
-        # Sample scenario
-        u = rng.random()
-        if u < pi0:
-            scen = 0
-        elif u < pi0 + piA:
-            scen = 1
-        else:
-            scen = 2
-
-        # State update (B priority)
-        if scen == 0:
-            q_eff = q
-            IB = IB - q_eff
-            bA = max(0, bA - q_eff)
-        elif scen == 1:
-            q_eff = q
-            IB = IB - q_eff
-            bA = max(0, bA - q_eff + 1)
-        else:
-            base_IB = IB - (1 if IB > 0 else 0)
-            q_eff = min(q, max(base_IB, 0))
-            IB = base_IB - q_eff
-            bA = max(0, bA - q_eff)
-
-        if CLAMP_TO_GRID:
-            IB = max(inst.minIB, min(inst.maxIB, IB))
-            bA = max(0, min(inst.maxbA, bA))
-
-    return {"time": times, "IA": IA, "if_dispatch": IF_DISPATCH, "IB": IBs}
-
-# -------------------------
-# Cost helpers (exact and simulation)
+# Cost helpers (exact and simulation tally)
 # -------------------------
 def get_optimal_expected_cost_user_t(solution, inst: Instance, t_user: int, IB: int, bA: int) -> float:
-    """
-    User t=0 (start) corresponds to internal r=N.
-    Return V[r, IB, bA] with r = N - t_user.
-    """
     r = inst.N - t_user
     if not (0 <= r <= inst.N):
         raise ValueError(f"user t out of range: t_user={t_user} -> r={r}")
@@ -300,10 +229,6 @@ def get_optimal_expected_cost_user_t(solution, inst: Instance, t_user: int, IB: 
     return float(solution["V"][r][i0, j0])
 
 def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: int = 2025) -> float:
-    """
-    Simulate one path under the optimal policy and return the realized total cost.
-    Period cost = dispatch + closing (same as in DP).
-    """
     rng = np.random.default_rng(seed)
     IB_vals, bA_vals = solution["IB_vals"], solution["bA_vals"]
     PI = solution["PI"]
@@ -315,14 +240,12 @@ def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: i
 
     for k in range(inst.N):
         r = inst.N - k  # periods remaining now
-        # planned action at current state (clamped)
         IBc = max(inst.minIB, min(inst.maxIB, IB))
         bAc = max(0, min(inst.maxbA, bA))
         i = int(np.where(IB_vals == IBc)[0][0])
         j = int(np.where(bA_vals == bAc)[0][0])
         q = int(PI[r][i, j])
 
-        # draw scenario
         u = rng.random()
         if u < pi0:
             scen = 0
@@ -331,7 +254,6 @@ def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: i
         else:
             scen = 2
 
-        # evolve and cost
         if scen == 0:
             q_eff = q
             IB_next = IB - q_eff
@@ -358,15 +280,7 @@ def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: i
 
     return float(total_cost)
 
-# -------------------------
-# Tally over multiple simulations (mean & 95% CI)
-# -------------------------
 def run_simulations(inst: Instance, solution, simN: int, base_seed: int, IB0: int, bA0: int):
-    """
-    Run simN independent paths with seeds base_seed + r.
-    Return (mean, std, ci_low, ci_high, all_costs).
-    CI uses normal approx (z=1.96).
-    """
     costs = []
     for r in range(simN):
         seed = base_seed + r
@@ -385,6 +299,12 @@ def run_simulations(inst: Instance, solution, simN: int, base_seed: int, IB0: in
 # Demo / quick run
 # -------------------------
 if __name__ == "__main__":
+    # === knobs for quick experiments ===
+    SHOW_POLICY_GRIDS = True
+    OUTFILE = "epoch.txt"
+    RUN_LABEL = "Baseline"
+    SEED = 2025
+
     # Example instance (edit as needed)
     inst = Instance(
         N=20, T=2.0,               # dt = 0.1
@@ -398,25 +318,21 @@ if __name__ == "__main__":
     # Solve DP (exact)
     solution = solveDP_AMO_Bpriority_dynamic(inst)
 
-    # === (1) Exact optimal policy results ===
-    print_policies_every5(solution, inst)  # policy grids for r = N, N-5, ..., 0
+    # (Optional) Show a few policy grids
+    if SHOW_POLICY_GRIDS:
+        print_policies_every5(solution, inst)
+
     # Report the optimal expected cost at user-facing t=0 (start), which maps to r=N
     opt_cost = get_optimal_expected_cost_user_t(solution, inst, t_user=0, IB=inst.IB0, bA=0)
-    print(f"\n[Exact] Optimal expected cost at user t=0 (start), state (IB0={inst.IB0}, bA0=0): {opt_cost:.4f}")
+    print(f"\n[Exact] Optimal expected cost at t=0 from (IB0={inst.IB0}, bA0=0): {opt_cost:.4f}")
 
-    # === (2) Single simulation table (one path) ===
-    traj = simulate_trajectory(inst, solution, IB0=inst.IB0, bA0=0, seed=2025)
-    print("\n==== Four-row trajectory table (decision-epoch state, BEFORE scenario) ====")
-    def row(name, arr): return name + ":\t" + "\t".join(str(x) for x in arr)
-    print(row("time", traj["time"]))
-    print(row("IA", traj["IA"]))
-    print(row("if_dispatch", traj["if_dispatch"]))
-    print(row("IB", traj["IB"]))
-    sim_cost_once = simulate_realized_cost(inst, solution, IB0=inst.IB0, bA0=0, seed=2025)
-    print(f"\n[Single path] Realized simulation cost (seed=2025): {sim_cost_once:.4f}")
+    # Present one epoch trajectory to CSV
+    present_epoch(inst, solution, IB0=inst.IB0, bA0=0, seed=2025,
+                  outfile="epoch.csv", label="Run A")
 
-    # === (3) Tally over simN simulations ===
-    simN = 5000        # how many simulations to run
-    base_seed = 3260  # base seed; each run uses base_seed + r
+
+    # (Optional) batch simulations for a CI (kept, since not part of old 4-row table)
+    simN = 2000
+    base_seed = 3260
     mean, std, lo, hi, costs = run_simulations(inst, solution, simN, base_seed, IB0=inst.IB0, bA0=0)
     print(f"\n[Tally over {simN} sims] mean={mean:.4f}, std={std:.4f}, 95% CI=({lo:.4f}, {hi:.4f})")
