@@ -1,13 +1,16 @@
 # DPmain.py (runner only)
+
 from minimalSolver import (
     Instance,
     solveDP_AMO_Bpriority_dynamic,
     get_optimal_expected_cost_user_t,
     run_simulations,
-    append_sim_results,
-)
+    append_sim_results,)
+
+
 
 # presentation helpers live outside the solver:
+
 from present_epoch import present_epoch
 from present_policy import present_policy
 from present_surface import present_surface
@@ -18,24 +21,29 @@ from verify_theory import run_full_check
 
 if __name__ == "__main__":
     # knobs
-    RUN_LABEL       = "Baseline"
-    EPOCH_OUTFILE   = "epoch.csv"
-    POLICY_OUTFILE  = "policy.csv"
-    SIMS_OUTFILE    = "sims.csv"
-    SEED            = 2025
+
+    RUN_LABEL = "Baseline"
+    EPOCH_OUTFILE = "epoch.csv"
+    POLICY_OUTFILE = "policy.csv"
+    SIMS_OUTFILE = "sims.csv"
+    SEED = 2025
 
     # instance
     inst = Instance(
-        N=20, T=2.0,
-        lambdaA=8, lambdaB=5,
-        h=0.1, pA=50.0, pB=10.0,
-        cf=20.0, cu=1.0,
-        minIB=-20, maxIB=20, maxbA=10,
-        IB0=20
+    N=20, T=2.0,
+    lambdaA=8, lambdaB=5,
+    h=0.1, pA=50.0, pB=10.0,
+    cf=20.0, cu=1.0,
+    minIB=-20, maxIB=20, maxbA=10,
+    IB0=20
     )
+
+
 
     # solve
     solution = solveDP_AMO_Bpriority_dynamic(inst)
+
+
 
     # optimal expected cost at start (user t=0 => r=N)
     opt_cost = get_optimal_expected_cost_user_t(solution, inst, t_user=0, IB=inst.IB0, bA=0)
@@ -58,8 +66,7 @@ if __name__ == "__main__":
     append_sim_results(SIMS_OUTFILE, RUN_LABEL, base_seed, costs)
 
 
-    run_full_check(
-        inst, solution,
+    run_full_check( inst, solution,
         fullclear_csv="fullclear_report.csv",
         surf_csv="critical_surface.csv",
         surf_png="critical_surface.png",

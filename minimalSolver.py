@@ -8,6 +8,7 @@ import numpy as np
 import csv
 import os
 
+
 # -------------------------
 # Problem instance
 # -------------------------
@@ -25,17 +26,19 @@ class Instance:
     minIB: int
     maxIB: int
     maxbA: int
-    IB0: int = 0            # initial inventory at B (user input)
-    tail: float = 0.0       # unused in AMO
+    IB0: int = 0  # initial inventory at B (user input)
+    tail: float = 0.0  # unused in AMO
 
     def dt(self) -> float:
         return self.T / self.N
+
 
 # -------------------------
 # Global toggles
 # -------------------------
 PAY_FIXED_ON_REALIZED: bool = True  # fixed cost charged when q_realized>0 (else on planned q>0)
-CLAMP_TO_GRID: bool = True          # clamp next states into grid bounds
+CLAMP_TO_GRID: bool = True  # clamp next states into grid bounds
+
 
 # -------------------------
 # Demand probabilities (AMO)
@@ -51,6 +54,7 @@ def computeDemandProbability_AMO(inst: Instance) -> Tuple[float, float, float]:
         return 1.0, 0.0, 0.0
     return pi0 / s, piA / s, piB / s
 
+
 # -------------------------
 # Costs
 # -------------------------
@@ -62,12 +66,14 @@ def computeImmediateCost_closing(IB_end: int, bA_end: int, inst: Instance) -> fl
     backlogA = inst.pA * bA_end
     return dt * (holding + backlogB + backlogA)
 
+
 def computeTransshipmentCost(q_planned: int, q_realized: int, inst: Instance) -> float:
     # Dispatch cost = fixed + variable
     pay_fixed = (q_realized > 0) if PAY_FIXED_ON_REALIZED else (q_planned > 0)
     fixed = inst.cf if pay_fixed else 0.0
     variable = inst.cu * q_realized
     return fixed + variable
+
 
 # -------------------------
 # State grid
@@ -78,6 +84,7 @@ def buildStateGrid(inst: Instance):
     IB2i = {v: i for i, v in enumerate(IB_vals)}
     bA2j = {v: j for j, v in enumerate(bA_vals)}
     return IB_vals, bA_vals, IB2i, bA2j
+
 
 # -------------------------
 # DP solver (FORWARD in r = periods remaining)
@@ -90,12 +97,12 @@ def solveDP_AMO_Bpriority_dynamic(inst: Instance) -> Dict[str, Any]:
     nI, nA = len(IB_vals), len(bA_vals)
 
     # V[r] = cost with r periods remaining; V[0] = 0 terminal
-    V  = [np.zeros((nI, nA), dtype=float) for _ in range(inst.N + 1)]
+    V = [np.zeros((nI, nA), dtype=float) for _ in range(inst.N + 1)]
     # PI[r] = optimal action when r periods remain
-    PI = [np.zeros((nI, nA), dtype=int)   for _ in range(inst.N + 1)]
+    PI = [np.zeros((nI, nA), dtype=int) for _ in range(inst.N + 1)]
 
     for r in range(1, inst.N + 1):
-        Vprev = V[r - 1]   # future value after this period
+        Vprev = V[r - 1]  # future value after this period
         for i, IB in enumerate(IB_vals):
             for j, bA in enumerate(bA_vals):
                 max_feasible_q = max(0, min(IB, bA))
@@ -131,11 +138,18 @@ def solveDP_AMO_Bpriority_dynamic(inst: Instance) -> Dict[str, Any]:
                     cc = computeImmediateCost_closing(IBc, bAc, inst)
                     total_expected += pis[1] * (dc + cc + Vprev[IB2i[IBc], bA2j[bAc]])
 
-                    # B_ONLY with B priority
-                    base_IB = IB - (1 if IB > 0 else 0)     # B consumes 1 if available
-                    q_eff = min(q, max(base_IB, 0))         # then ship to A from what's left
-                    IB_end = base_IB - q_eff
+                    # B_ONLY with B priority (CORRECTED LOGIC)
+                    # 1. Demand at B always reduces IB (even if < 0)
+                    IB_post_demand = IB - 1
+
+                    # 2. Can only ship if we still have positive inventory after demand
+                    available_for_ship = max(0, IB_post_demand)
+                    q_eff = min(q, available_for_ship)
+
+                    # 3. Final state
+                    IB_end = IB_post_demand - q_eff
                     bA_end = max(0, bA - q_eff)
+
                     if CLAMP_TO_GRID:
                         IBc = max(inst.minIB, min(inst.maxIB, IB_end))
                         bAc = max(0, min(inst.maxbA, bA_end))
@@ -150,15 +164,16 @@ def solveDP_AMO_Bpriority_dynamic(inst: Instance) -> Dict[str, Any]:
                         best_q = q
 
                 PI[r][i, j] = best_q
-                V[r][i, j]  = best_cost
+                V[r][i, j] = best_cost
 
     return {
-        "V": V,                 # list of (nI x nA), r=0..N
-        "PI": PI,               # list of (nI x nA), r=0..N
+        "V": V,  # list of (nI x nA), r=0..N
+        "PI": PI,  # list of (nI x nA), r=0..N
         "IB_vals": IB_vals,
         "bA_vals": bA_vals,
         "pi": (pi0, piA, piB),
     }
+
 
 # -------------------------
 # Cost helpers (exact and simulation)
@@ -177,6 +192,7 @@ def get_optimal_expected_cost_user_t(solution, inst: Instance, t_user: int, IB: 
     i0 = int(np.where(IB_vals == IBc)[0][0])
     j0 = int(np.where(bA_vals == bAc)[0][0])
     return float(solution["V"][r][i0, j0])
+
 
 def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: int = 2025) -> float:
     """
@@ -218,10 +234,11 @@ def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: i
             q_eff = q
             IB_next = IB - q_eff
             bA_next = max(0, bA - q_eff + 1)
-        else:
-            base_IB = IB - (1 if IB > 0 else 0)
-            q_eff = min(q, max(base_IB, 0))
-            IB_next = base_IB - q_eff
+        else:  # scen 2 (B_ONLY) - CORRECTED LOGIC
+            IB_post_demand = IB - 1
+            available_for_ship = max(0, IB_post_demand)
+            q_eff = min(q, available_for_ship)
+            IB_next = IB_post_demand - q_eff
             bA_next = max(0, bA - q_eff)
 
         if CLAMP_TO_GRID:
@@ -229,12 +246,13 @@ def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: i
             bA_next = max(0, min(inst.maxbA, bA_next))
 
         dispatch_cost = computeTransshipmentCost(q_planned=q, q_realized=q_eff, inst=inst)
-        closing_cost  = computeImmediateCost_closing(IB_next, bA_next, inst)
+        closing_cost = computeImmediateCost_closing(IB_next, bA_next, inst)
         total_cost += (dispatch_cost + closing_cost)
 
         IB, bA = IB_next, bA_next
 
     return float(total_cost)
+
 
 def run_simulations(inst: Instance, solution, simN: int, base_seed: int, IB0: int, bA0: int):
     """
@@ -255,6 +273,7 @@ def run_simulations(inst: Instance, solution, simN: int, base_seed: int, IB0: in
     half_width = z * std / (simN ** 0.5) if simN > 1 else 0.0
     ci_low, ci_high = mean - half_width, mean + half_width
     return mean, std, ci_low, ci_high, costs
+
 
 # -------------------------
 # Persist simulation results (append-only)
@@ -281,6 +300,7 @@ def append_sim_results(outfile: str, label: str, base_seed: int, costs: np.ndarr
             half = z * std / (len(costs) ** 0.5) if len(costs) > 1 else 0.0
             lo, hi = mean - half, mean + half
             w.writerow([label, "summary", "", "", "", f"{mean:.6f}", f"{std:.6f}", f"{lo:.6f}", f"{hi:.6f}"])
+
 
 __all__ = [
     "Instance",
