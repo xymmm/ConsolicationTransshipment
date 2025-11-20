@@ -91,13 +91,40 @@ def buildStateGrid(inst: Instance):
 # -------------------------
 def solveDP_AMO_Bpriority_dynamic(inst: Instance) -> Dict[str, Any]:
     pi0, piA, piB = computeDemandProbability_AMO(inst)
-    pis = np.array([pi0, piA, piB], dtype=float)  # [NONE, A_ONLY, B_ONLY]
+    pis = np.array([pi0, piA, piB], dtype=float)
 
     IB_vals, bA_vals, IB2i, bA2j = buildStateGrid(inst)
     nI, nA = len(IB_vals), len(bA_vals)
 
-    # V[r] = cost with r periods remaining; V[0] = 0 terminal
+    # --- MODIFICATION START ---
+    # Instead of initializing V with zeros, we use the analytical form
+    # derived in the PDF (Eq 9) at tau=0 to capture the "Theorem 1" structure.
+    # V_w(I2, b1, 0) = term_I2 + cu*b1 + Cf*(1 if b1>0 else 0)
+
+    V_terminal = np.zeros((nI, nA), dtype=float)
+
+    factor = (inst.h + inst.pB) / (2 * inst.lambdaB) if inst.lambdaB > 0 else 0
+
+    for i, IB in enumerate(IB_vals):
+        for j, bA in enumerate(bA_vals):
+            if IB >= 0:
+                # Equation (9) from PDF at tau=0:
+                # V = (h+pi2)/(2*lambda2) * (I2^2 + I2) + cu*b1 + Cf*1_{b1>0}
+                term_I2 = factor * (IB ** 2 + IB)
+                term_b1 = inst.cu * bA
+                term_fixed = inst.cf if bA > 0 else 0.0
+                V_terminal[i, j] = term_I2 + term_b1 + term_fixed
+            else:
+                # Fallback for negative inventory (not explicitly covered in Eq 9 quadratic form)
+                # We use standard linear closing cost or 0.
+                # Using 0 is safe as Theorem 1 focuses on I2 > 0 dispatch region.
+                V_terminal[i, j] = 0.0
+
+    # Initialize V list with this terminal condition at index 0 (which is r=0)
     V = [np.zeros((nI, nA), dtype=float) for _ in range(inst.N + 1)]
+    V[0] = V_terminal
+    # --- MODIFICATION END ---
+
     # PI[r] = optimal action when r periods remain
     PI = [np.zeros((nI, nA), dtype=int) for _ in range(inst.N + 1)]
 
@@ -197,7 +224,7 @@ def get_optimal_expected_cost_user_t(solution, inst: Instance, t_user: int, IB: 
 def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: int = 2025) -> float:
     """
     Simulate one path under the optimal policy and return the realized total cost.
-    Period cost = dispatch + closing (same as in DP).
+    Period cost = dispatch + closing + TERMINAL COST.
     """
     rng = np.random.default_rng(seed)
     IB_vals, bA_vals = solution["IB_vals"], solution["bA_vals"]
@@ -208,6 +235,7 @@ def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: i
     bA = bA0
     total_cost = 0.0
 
+    # 1. Loop through N periods
     for k in range(inst.N):
         r = inst.N - k  # periods remaining now
         IBc = max(inst.minIB, min(inst.maxIB, IB))
@@ -250,6 +278,25 @@ def simulate_realized_cost(inst: Instance, solution, IB0: int, bA0: int, seed: i
         total_cost += (dispatch_cost + closing_cost)
 
         IB, bA = IB_next, bA_next
+
+    # 2. CRITICAL FIX: Add Terminal Cost (Salvage/Penalty at end of horizon)
+    # This must match the V[0] initialization logic in your DP solver.
+    if inst.lambdaB > 0:
+        factor = (inst.h + inst.pB) / (2 * inst.lambdaB)
+    else:
+        factor = 0.0
+
+    # Apply the quadratic approximation for positive inventory (Theorem 1 logic)
+    if IB >= 0:
+        term_I2 = factor * (IB ** 2 + IB)
+        term_b1 = inst.cu * bA
+        term_fixed = inst.cf if bA > 0 else 0.0
+        terminal_cost = term_I2 + term_b1 + term_fixed
+    else:
+        # Fallback for negative inventory (assumed 0 in this context)
+        terminal_cost = 0.0
+
+    total_cost += terminal_cost
 
     return float(total_cost)
 
