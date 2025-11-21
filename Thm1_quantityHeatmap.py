@@ -135,24 +135,27 @@ def plot_heatmap(df_policy, title_suffix, output_filename):
 
 # --- Main Execution ---
 
+
+
+# change csv paths as needed
 configs = [
     {
-        "file": "Thm1_Verify/Thm1_Base_policy.csv",
+        "file": "Thm1_Verify_p1larger/Thm1_Base_policy.csv",
         "r": 20,
         "title": "Base Case (N=20)",
-        "out": "Policy_Heatmap_N20.png"
+        "out": "Thm1_Verify_p1larger/Policy_Heatmap_N20_p1larger.png"
     },
     {
-        "file": "Thm1_Verify/Thm1_Base_N100_policy.csv",
+        "file": "Thm1_Verify_p1larger/Thm1_Base_N100_policy.csv",
         "r": 100,
         "title": "High Res (N=100)",
-        "out": "Policy_Heatmap_N100.png"
+        "out": "Thm1_Verify_p1larger/Policy_Heatmap_N100_p1larger.png"
     },
     {
-        "file": "Thm1_Verify/Thm1_Base_N200_policy.csv",
+        "file": "Thm1_Verify_p1larger/Thm1_Base_N200_policy.csv",
         "r": 200,
         "title": "Very High Res (N=200)",
-        "out": "Policy_Heatmap_N200.png"
+        "out": "Thm1_Verify_p1larger/Policy_Heatmap_N200_p1larger.png"
     }
 ]
 
